@@ -4,19 +4,14 @@ import MaterialIcons from "@react-native-vector-icons/material-icons";
 import Feather from "@react-native-vector-icons/feather";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import React, { useContext } from "react";
-import { Alert, Switch } from "react-native";
+import { Switch } from "react-native";
 
 import List from "../../../components/UI/List";
 import { CommentSettingsContext } from "../../../contexts/SettingsContexts/CommentSettingsContext";
 import { ThemeContext } from "../../../contexts/SettingsContexts/ThemeContext";
-import { SubscriptionsContext } from "../../../contexts/SubscriptionsContext";
-import { useURLNavigation } from "../../../utils/navigation";
 
 export default function CommentAppearance() {
   const { theme } = useContext(ThemeContext);
-  const { isPro } = useContext(SubscriptionsContext);
-
-  const { pushURL } = useURLNavigation();
 
   const {
     voteIndicator,
@@ -25,10 +20,6 @@ export default function CommentAppearance() {
     toggleCollapseAutoModerator,
     commentFlairs,
     toggleCommentFlairs,
-    showCommentSummary,
-    toggleShowCommentSummary,
-    collapseCommentSummary,
-    toggleCollapseCommentSummary,
     tapToCollapseComment,
     toggleTapToCollapseComment,
     collapseChildrenOnly,
@@ -36,22 +27,6 @@ export default function CommentAppearance() {
     showScrollToNextButton,
     toggleShowScrollToNextButton,
   } = useContext(CommentSettingsContext);
-
-  const showProAlert = (title: string, message: string) => {
-    Alert.alert(title, message, [
-      {
-        text: "Get Hydra Pro",
-        isPreferred: true,
-        onPress: () => {
-          pushURL("hydra://settings/hydraPro");
-        },
-      },
-      {
-        text: "Maybe Later",
-        style: "cancel",
-      },
-    ]);
-  };
 
   return (
     <List
@@ -111,64 +86,6 @@ export default function CommentAppearance() {
           text: "Show flairs",
           onPress: () => toggleCommentFlairs(),
         },
-        {
-          key: "showCommentSummary",
-          icon: (
-            <MaterialIcons name="short-text" size={24} color={theme.text} />
-          ),
-          rightIcon: (
-            <Switch
-              trackColor={{
-                false: theme.iconSecondary,
-                true: theme.iconPrimary,
-              }}
-              value={isPro && showCommentSummary}
-              onValueChange={() => {
-                if (isPro) {
-                  toggleShowCommentSummary();
-                } else {
-                  showProAlert(
-                    "Hydra Pro",
-                    "Comment summaries are only available to Hydra Pro subscribers.",
-                  );
-                }
-              }}
-            />
-          ),
-          text: "Show comment summary",
-          onPress: () => {
-            if (isPro) {
-              toggleShowCommentSummary();
-            } else {
-              showProAlert(
-                "Hydra Pro",
-                "Comment summaries are only available to Hydra Pro subscribers.",
-              );
-            }
-          },
-        },
-        ...(isPro && showCommentSummary
-          ? [
-              {
-                key: "collapseCommentSummary",
-                icon: (
-                  <Feather name="minimize-2" size={22} color={theme.text} />
-                ),
-                rightIcon: (
-                  <Switch
-                    trackColor={{
-                      false: theme.iconSecondary,
-                      true: theme.iconPrimary,
-                    }}
-                    value={collapseCommentSummary}
-                    onValueChange={() => toggleCollapseCommentSummary()}
-                  />
-                ),
-                text: "Start summary collapsed",
-                onPress: () => toggleCollapseCommentSummary(),
-              },
-            ]
-          : []),
         {
           key: "tapToCollapseComment",
           icon: (

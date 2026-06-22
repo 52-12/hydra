@@ -1,5 +1,5 @@
 import { setStatusBarStyle } from "expo-status-bar";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useEffect, useState } from "react";
 import { useMMKVBoolean, useMMKVString } from "react-native-mmkv";
 
 import Themes, {
@@ -7,7 +7,6 @@ import Themes, {
   CustomTheme,
   NEW_CUSTOM_THEME,
 } from "../../constants/Themes";
-import { SubscriptionsContext } from "../SubscriptionsContext";
 import { getCustomTheme } from "../../db/functions/CustomThemes";
 import { ColorSchemeName, useColorScheme } from "react-native";
 
@@ -30,8 +29,6 @@ const initialThemeContext = {
 export const ThemeContext = createContext(initialThemeContext);
 
 export function ThemeProvider({ children }: React.PropsWithChildren) {
-  const { isPro, purchasesInitialized } = useContext(SubscriptionsContext);
-
   const systemColorScheme = useColorScheme() ?? "light";
 
   const [storedCurrentTheme, setStoredTheme] = useMMKVString("theme");
@@ -46,45 +43,15 @@ export function ThemeProvider({ children }: React.PropsWithChildren) {
   const useDifferentDarkTheme =
     storedUseDifferentDarkTheme ?? initialThemeContext.useDifferentDarkTheme;
 
-  const temporaryThemeTimeout = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const [temporaryTheme, setTemporaryTheme] = useState<string | null>(null);
-
   const lightTheme = storedCurrentTheme ?? initialThemeContext.currentTheme;
   const darkTheme = storedDarkTheme ?? initialThemeContext.currentTheme;
   const currentTheme =
-    temporaryTheme ??
     (systemColorScheme === "light" || !useDifferentDarkTheme
       ? storedCurrentTheme
-      : storedDarkTheme) ??
-    initialThemeContext.currentTheme;
+      : storedDarkTheme) ?? initialThemeContext.currentTheme;
 
-  const cantUseTheme = (themeKey: string) => {
-    return (
-      purchasesInitialized &&
-      !isPro &&
-      (!(themeKey in Themes) ||
-        (themeKey in Themes && Themes[themeKey as keyof typeof Themes].isPro))
-    );
-  };
-
-  const clearTemporaryTheme = () => {
-    if (temporaryThemeTimeout.current) {
-      clearTimeout(temporaryThemeTimeout.current);
-      temporaryThemeTimeout.current = null;
-    }
-    setTemporaryTheme(null);
-  };
-
-  const grantThemeTemporarily = (themeKey: string) => {
-    clearTemporaryTheme();
-    setTemporaryTheme(themeKey);
-    temporaryThemeTimeout.current = setTimeout(
-      () => clearTemporaryTheme(),
-      1000 * 60 * 5,
-    );
-  };
+  // Every theme is free, so any theme can always be used.
+  const cantUseTheme = (_themeKey: string) => false;
 
   const setCurrentTheme = (
     themeKey: string,
@@ -92,13 +59,7 @@ export function ThemeProvider({ children }: React.PropsWithChildren) {
       ? systemColorScheme
       : null,
   ) => {
-    clearTemporaryTheme();
-    if (cantUseTheme(themeKey)) {
-      if (colorScheme === null || colorScheme === systemColorScheme) {
-        grantThemeTemporarily(themeKey);
-        return true;
-      }
-    } else if (colorScheme === null || colorScheme === "light") {
+    if (colorScheme === null || colorScheme === "light") {
       setStoredTheme(themeKey);
     } else {
       setStoredDarkTheme(themeKey);
@@ -126,16 +87,6 @@ export function ThemeProvider({ children }: React.PropsWithChildren) {
   useEffect(() => {
     setStatusBarStyle(theme.statusBar);
   }, [theme.statusBar]);
-
-  useEffect(() => {
-    if (
-      purchasesInitialized &&
-      !temporaryThemeTimeout.current &&
-      cantUseTheme(currentTheme)
-    ) {
-      setStoredTheme(initialThemeContext.currentTheme);
-    }
-  }, [purchasesInitialized, isPro]);
 
   return (
     <ThemeContext.Provider

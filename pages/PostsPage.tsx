@@ -51,7 +51,6 @@ export default function PostsPage({
 
   const {
     filterPostsByText,
-    filterPostsByAI,
     filterPostsBySubreddit,
     autoMarkAsSeen,
     getHideSeenURLStatus,
@@ -80,7 +79,6 @@ export default function PostsPage({
     filterRules: [
       ...(shouldFilterSeen ? [filterSeenItems] : []),
       filterPostsByText,
-      filterPostsByAI,
       ...(isCombinedSubredditFeed ? [filterPostsBySubreddit] : []),
     ],
     // Reddit's feed pages are small (6 posts, then 24), so filters that remove

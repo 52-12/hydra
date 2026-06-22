@@ -14,8 +14,6 @@ import { TabBarScrollView } from "../../../contexts/TabBarInsetsContext";
 import { useGlassHeaderInset } from "../../../utils/liquidGlass";
 import Video from "./Video";
 import { ThemeContext } from "../../../contexts/SettingsContexts/ThemeContext";
-import GetHydraProButton from "../GetHydraProButton";
-import { SubscriptionsContext } from "../../../contexts/SubscriptionsContext";
 import { MediaViewerContext } from "../../../contexts/MediaViewerContext";
 
 type GalleryItem = {
@@ -38,8 +36,6 @@ type GalleryComponentProps = {
   hitFilterLimit: boolean;
 };
 
-const FREE_LIMIT_POST_COUNT = 100;
-
 export default function GalleryComponent({
   posts,
   loadMore,
@@ -47,7 +43,6 @@ export default function GalleryComponent({
   hitFilterLimit,
 }: GalleryComponentProps) {
   const { theme } = useContext(ThemeContext);
-  const { isPro } = useContext(SubscriptionsContext);
   const { displayMedia, updateMedia } = useContext(MediaViewerContext);
 
   const [contentDimensions, setContentDimensions] = useState({
@@ -55,7 +50,6 @@ export default function GalleryComponent({
     height: 1000,
   });
   const [isLoadingMore, setIsLoadingMore] = useState(true);
-  const [hitFreeLimit, setHitFreeLimit] = useState(false);
 
   const flashListRef = useRef<FlashListRef<GalleryItem>>(null);
   const headerInset = useGlassHeaderInset();
@@ -111,11 +105,7 @@ export default function GalleryComponent({
   });
 
   const loadMoreData = async () => {
-    if (fullyLoaded || hitFreeLimit) return;
-    if (!isPro && posts.length >= FREE_LIMIT_POST_COUNT) {
-      setHitFreeLimit(true);
-      return;
-    }
+    if (fullyLoaded) return;
     setIsLoadingMore(true);
     await loadMore();
     setIsLoadingMore(false);
@@ -234,22 +224,6 @@ export default function GalleryComponent({
                 media.
               </Text>
             )}
-            {hitFreeLimit && (
-              <View style={styles.freeLimitContainer}>
-                <Text
-                  style={[
-                    styles.endOfListText,
-                    {
-                      color: theme.text,
-                    },
-                  ]}
-                >
-                  Upgrade to Hydra Pro to support my work and to scroll past{" "}
-                  {FREE_LIMIT_POST_COUNT} posts in Gallery Mode.
-                </Text>
-                <GetHydraProButton />
-              </View>
-            )}
           </View>
         }
       />
@@ -276,9 +250,5 @@ const styles = StyleSheet.create({
   endOfListText: {
     fontSize: 14,
     marginHorizontal: 20,
-  },
-  freeLimitContainer: {
-    alignItems: "stretch",
-    justifyContent: "center",
   },
 });

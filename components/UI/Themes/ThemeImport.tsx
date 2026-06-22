@@ -3,7 +3,6 @@ import { StyleSheet, Text, Alert, View } from "react-native";
 import { Touchable } from "react-native-gesture-handler";
 
 import { ThemeContext } from "../../../contexts/SettingsContexts/ThemeContext";
-import { SubscriptionsContext } from "../../../contexts/SubscriptionsContext";
 import Themes, { CustomTheme } from "../../../constants/Themes";
 import { useSetTheme } from "../../../utils/useSetTheme";
 import { saveCustomTheme } from "../../../db/functions/CustomThemes";
@@ -16,7 +15,6 @@ type ThemeImportProps = {
 
 export default function ThemeImport({ customTheme }: ThemeImportProps) {
   const { theme: currentTheme } = useContext(ThemeContext);
-  const { isPro } = useContext(SubscriptionsContext);
   const { showToast } = useContext(ToastContext);
 
   const setTheme = useSetTheme();
@@ -44,7 +42,7 @@ export default function ThemeImport({ customTheme }: ThemeImportProps) {
   const saveTheme = () =>
     Alert.alert(
       `Import Theme`,
-      `Import "${customTheme.name}" to your custom themes? ${!isPro ? "Non Pro users can try themes out for 5 minutes." : ""}`,
+      `Import "${customTheme.name}" to your custom themes?`,
       [
         { text: "Cancel", style: "cancel" },
         {

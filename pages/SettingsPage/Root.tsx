@@ -10,7 +10,6 @@ import React, { useContext } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { supportsAlternateIcons } from "../../utils/appIcons";
 
-import GetHydraProButton from "../../components/UI/GetHydraProButton";
 import List from "../../components/UI/List";
 import { ThemeContext } from "../../contexts/SettingsContexts/ThemeContext";
 import { useURLNavigation } from "../../utils/navigation";
@@ -232,9 +231,6 @@ export default function Root() {
           },
         ]}
       />
-      <View style={styles.hydraProContainer}>
-        <GetHydraProButton />
-      </View>
       <View style={styles.appDetails}>
         <Text
           style={[
@@ -269,9 +265,5 @@ const styles = StyleSheet.create({
   appDetailsText: {
     flex: 1,
     textAlign: "center",
-  },
-  hydraProContainer: {
-    marginTop: 10,
-    marginHorizontal: -10,
   },
 });
