@@ -6,7 +6,6 @@ import { Touchable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemeContext } from "../../../contexts/SettingsContexts/ThemeContext";
-import GetHydraProButton from "../../UI/GetHydraProButton";
 import KeyStore from "../../../utils/KeyStore";
 import { useURLNavigation } from "../../../utils/navigation";
 import { StackActions } from "@react-navigation/native";
@@ -355,9 +354,6 @@ export default function UpdateInfo({ onExit }: { onExit: () => void }) {
               you can make a pull request at https://github.com/dmilin1/hydra
             </Text>
           </View>
-          <View style={styles.getHydraProContainer}>
-            <GetHydraProButton onPress={() => exitUpdateInfo()} />
-          </View>
           <Touchable
             style={styles.tipJarContainer}
             activeOpacity={0.5}
@@ -504,9 +500,6 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     gap: 15,
-  },
-  getHydraProContainer: {
-    marginTop: 10,
   },
   tipJarContainer: {
     paddingTop: 10,

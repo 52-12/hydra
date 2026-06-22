@@ -6,21 +6,16 @@ import MaterialIcons from "@react-native-vector-icons/material-icons";
 import Feather from "@react-native-vector-icons/feather";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import React, { useContext } from "react";
-import { Alert, Platform, Switch } from "react-native";
+import { Platform, Switch } from "react-native";
 
 import List from "../../../components/UI/List";
 import { PostSettingsContext } from "../../../contexts/SettingsContexts/PostSettingsContext";
 import { ThemeContext } from "../../../contexts/SettingsContexts/ThemeContext";
-import { SubscriptionsContext } from "../../../contexts/SubscriptionsContext";
-import { useURLNavigation } from "../../../utils/navigation";
 import { useSettingsPicker } from "../../../utils/useSettingsPicker";
 import { useSplitViewSupport } from "../../../utils/useSplitViewSupport";
 
 export default function PostAppearance() {
   const { theme } = useContext(ThemeContext);
-  const { isPro } = useContext(SubscriptionsContext);
-
-  const { pushURL } = useURLNavigation();
 
   const { windowSupportsSplitView, splitViewEnabled, setSplitViewEnabled } =
     useSplitViewSupport();
@@ -48,10 +43,6 @@ export default function PostAppearance() {
     toggleBlurNSFW,
     blurSpoilers,
     toggleBlurSpoilers,
-    showPostSummary,
-    toggleShowPostSummary,
-    collapsePostSummary,
-    toggleCollapsePostSummary,
     autoPlayVideos,
     toggleAutoPlayVideos,
     muteVideosByDefault,
@@ -101,22 +92,6 @@ export default function PostAppearance() {
     value: linkDescriptionLength,
     onChange: changeLinkDescriptionLength,
   });
-
-  const showProAlert = (title: string, message: string) => {
-    Alert.alert(title, message, [
-      {
-        text: "Get Hydra Pro",
-        isPreferred: true,
-        onPress: () => {
-          pushURL("hydra://settings/hydraPro");
-        },
-      },
-      {
-        text: "Maybe Later",
-        style: "cancel",
-      },
-    ]);
-  };
 
   return (
     <List
@@ -308,64 +283,6 @@ export default function PostAppearance() {
           text: "Blur NSFW",
           onPress: () => toggleBlurNSFW(),
         },
-        {
-          key: "showPostSummary",
-          icon: (
-            <MaterialIcons name="short-text" size={24} color={theme.text} />
-          ),
-          rightIcon: (
-            <Switch
-              trackColor={{
-                false: theme.iconSecondary,
-                true: theme.iconPrimary,
-              }}
-              value={isPro && showPostSummary}
-              onValueChange={() => {
-                if (isPro) {
-                  toggleShowPostSummary();
-                } else {
-                  showProAlert(
-                    "Hydra Pro",
-                    "Post summaries are only available to Hydra Pro subscribers.",
-                  );
-                }
-              }}
-            />
-          ),
-          text: "Show post summary",
-          onPress: () => {
-            if (isPro) {
-              toggleShowPostSummary();
-            } else {
-              showProAlert(
-                "Hydra Pro",
-                "Post summaries are only available to Hydra Pro subscribers.",
-              );
-            }
-          },
-        },
-        ...(isPro && showPostSummary
-          ? [
-              {
-                key: "collapsePostSummary",
-                icon: (
-                  <Feather name="minimize-2" size={22} color={theme.text} />
-                ),
-                rightIcon: (
-                  <Switch
-                    trackColor={{
-                      false: theme.iconSecondary,
-                      true: theme.iconPrimary,
-                    }}
-                    value={collapsePostSummary}
-                    onValueChange={() => toggleCollapsePostSummary()}
-                  />
-                ),
-                text: "Start summary collapsed",
-                onPress: () => toggleCollapsePostSummary(),
-              },
-            ]
-          : []),
         {
           key: "autoPlayVideos",
           icon: (

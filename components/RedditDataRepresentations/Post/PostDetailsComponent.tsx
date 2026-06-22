@@ -14,11 +14,6 @@ import { View, Text, StyleSheet, Alert } from "react-native";
 
 import PostMedia from "./PostParts/PostMedia";
 import SubredditIcon from "./PostParts/SubredditIcon";
-import {
-  CommentsSummary,
-  PostSummary,
-  usePostSummaries,
-} from "./PostParts/Summaries";
 import { PostDetail } from "../../../api/PostDetail";
 import { vote } from "../../../api/gql/Vote";
 import { VoteOption } from "../../../api/Posts";
@@ -61,7 +56,6 @@ export default function PostDetailsComponent({
   // it, either of which the reload after a reply would undo.
   const replyReload = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(replyReload.current), [url]);
-  const { postSummary, commentsSummary } = usePostSummaries(postDetail);
 
   const contextDepth = Number(new RedditURL(url).getQueryParam("context") ?? 0);
 
@@ -94,7 +88,6 @@ export default function PostDetailsComponent({
           >
             {postDetail.title}
           </Text>
-          {!mediaCollapsed && <PostSummary summary={postSummary} />}
           {!mediaCollapsed && <PostMedia post={postDetail} />}
           <View style={styles.metadataContainer}>
             <View style={styles.metadataRow}>
@@ -383,7 +376,6 @@ export default function PostDetailsComponent({
           </Text>
         </Touchable>
       )}
-      <CommentsSummary summary={commentsSummary} />
     </View>
   );
 }
