@@ -128,8 +128,28 @@ jobs:
 
       - name: Verify iOS 16.1 floor survived
         run: |
-          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" \
-            build/Build/Products/Release-iphoneos/Hydra.app/Info.plist
+          APP=build/Build/Products/Release-iphoneos/Hydra.app
+          echo "app MinimumOSVersion:"
+          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
+
+          # Precompiled Expo modules are downloaded rather than built, so also
+          # check every embedded binary: an xcframework cut at 16.4 would load
+          # fine in the linker and crash on a 16.1 device.
+          BAD=0
+          echo "embedded binaries:"
+          while IFS= read -r p; do
+            v=$(/usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$p" 2>/dev/null || echo "")
+            [ -z "$v" ] && continue
+            echo "  $v  ${p#"$APP"/}"
+            if awk -v v="$v" 'BEGIN{exit !(v+0>16.1)}'; then
+              BAD=1
+              echo "::error file=$p::requires iOS $v"
+            fi
+          done < <(find "$APP" -name Info.plist)
+          if [ "$BAD" -ne 0 ]; then
+            echo "::error::At least one embedded binary requires iOS > 16.1"
+            exit 1
+          fi
 
       - name: Package IPA
         run: |
