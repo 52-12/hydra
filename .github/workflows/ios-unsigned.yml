@@ -1,17 +1,26 @@
 name: Build unsigned IPA
 
-# TrollStore installs unsigned IPAs, so this build deliberately disables all
-# code signing. No Apple account, team ID or certificate is involved.
+# Self-contained: generates the Xcode project from app.config.ts on the runner,
+# so a plain fork of upstream works without committing ios/.
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
+    inputs:
+      bundle_id:
+        description: "Optional bundle id override (empty = com.dmilin.hydra)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
 
 jobs:
   ipa:
     name: Unsigned release IPA
     runs-on: macos-15
     timeout-minutes: 90
+    env:
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+      CI: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -30,13 +39,42 @@ jobs:
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Install pods (modules build from source, keeps iOS 16.1 floor)
+      - name: Generate iOS project pinned to 16.1
+        run: |
+          node -e '
+            const fs = require("fs");
+            let s = fs.readFileSync("app.config.ts", "utf8");
+            if (!s.includes("deploymentTarget")) {
+              s = s.replace("    ios: {", "    ios: {\n      deploymentTarget: \"16.1\",");
+              fs.writeFileSync("app.config.ts", s);
+            }
+          '
+          npx expo prebuild -p ios --no-install
+
+          # Prebuilt Expo binaries are cut at 16.4 and would raise the floor.
+          node -e '
+            const fs = require("fs");
+            const f = "ios/Podfile.properties.json";
+            const j = JSON.parse(fs.readFileSync(f, "utf8"));
+            j["EXPO_USE_PRECOMPILED_MODULES"] = "false";
+            fs.writeFileSync(f, JSON.stringify(j, null, 2));
+          '
+
+          # All six targets (app + sharing extension, Debug + Release).
+          perl -pi -e 's/IPHONEOS_DEPLOYMENT_TARGET = "?16\.4"?/IPHONEOS_DEPLOYMENT_TARGET = 16.1/g' \
+            ios/Hydra.xcodeproj/project.pbxproj
+
+          if [ -n "${{ inputs.bundle_id }}" ]; then
+            perl -pi -e 's/com\.dmilin\.hydra/${{ inputs.bundle_id }}/g' \
+              ios/Hydra.xcodeproj/project.pbxproj
+            echo "Bundle id rewritten to ${{ inputs.bundle_id }}"
+          fi
+
+      - name: Install pods
         working-directory: ios
         run: pod install
 
-      - name: Build app
-        env:
-          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+      - name: Build app (unsigned)
         run: |
           xcodebuild -workspace ios/Hydra.xcworkspace \
             -scheme Hydra -configuration Release \
@@ -46,10 +84,10 @@ jobs:
             CODE_SIGN_IDENTITY="" EXPANDED_CODE_SIGN_IDENTITY="" \
             build
 
-      - name: Verify deployment target survived
+      - name: Verify iOS 16.1 floor survived
         run: |
-          PLIST="build/Build/Products/Release-iphoneos/Hydra.app/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" \
+            build/Build/Products/Release-iphoneos/Hydra.app/Info.plist
 
       - name: Package IPA
         run: |
