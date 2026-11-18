@@ -9,6 +9,10 @@ on:
         description: "Optional bundle id override (empty = com.dmilin.hydra)"
         required: false
         default: ""
+      xcode_version:
+        description: "Xcode to use (16.4 = Expo 58 era; 26.x enforces Swift 6 sending rules)"
+        required: false
+        default: "16.4"
       precompiled:
         description: "Use Expo precompiled modules (faster, may raise iOS floor)"
         type: boolean
@@ -34,23 +38,17 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Select newest installed Xcode
+      - name: Select Xcode
         run: |
-          ls -d /Applications/Xcode*.app
-          best=""
-          bestv="0"
-          for app in /Applications/Xcode*.app; do
-            v=$("$app/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -1 | awk '{print $2}')
-            [ -z "$v" ] && continue
-            if [ "$(printf '%s\n%s\n' "$v" "$bestv" | sort -g | tail -1)" = "$v" ] && [ "$v" != "$bestv" ]; then
-              best="$app"; bestv="$v"
-            fi
-          done
-          if [ -z "$best" ] || ! awk -v v="$bestv" 'BEGIN{exit !(v+0>=16.1)}'; then
-            echo "::error::No Xcode >= 16.1 available (best: $bestv)"; exit 1
+          ls -d /Applications/Xcode*.app | tr '\n' ' '
+          echo
+          WANT="${{ inputs.xcode_version }}"
+          CAND="/Applications/Xcode_${WANT}.app"
+          if [ ! -d "$CAND" ]; then
+            echo "::error::Xcode $WANT not installed on this image"; exit 1
           fi
-          echo "Using $best ($bestv)"
-          sudo xcode-select -s "$best"
+          echo "Using $CAND"
+          sudo xcode-select -s "$CAND"
           xcodebuild -version
 
       - name: Install JS dependencies
@@ -113,8 +111,6 @@ jobs:
             }
             console.log(`patched ${changed} of ${seen} podspecs`);
           '
-          echo "podspecs still declaring 16.4:"
-          grep -rl "16\.4" --include=*.podspec node_modules | wc -l
 
       - name: Install pods
         working-directory: ios
