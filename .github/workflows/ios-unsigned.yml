@@ -9,6 +9,11 @@ on:
         description: "Optional bundle id override (empty = com.dmilin.hydra)"
         required: false
         default: ""
+      precompiled:
+        description: "Use Expo precompiled modules (faster, may raise iOS floor)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -29,11 +34,23 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Select newest Xcode 16.x
+      - name: Select newest installed Xcode
         run: |
-          XCODE=$(ls -d /Applications/Xcode_16*.app | sort -r | head -1)
-          echo "Using $XCODE"
-          sudo xcode-select -s "$XCODE"
+          ls -d /Applications/Xcode*.app
+          best=""
+          bestv="0"
+          for app in /Applications/Xcode*.app; do
+            v=$("$app/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -1 | awk '{print $2}')
+            [ -z "$v" ] && continue
+            if [ "$(printf '%s\n%s\n' "$v" "$bestv" | sort -g | tail -1)" = "$v" ] && [ "$v" != "$bestv" ]; then
+              best="$app"; bestv="$v"
+            fi
+          done
+          if [ -z "$best" ] || ! awk -v v="$bestv" 'BEGIN{exit !(v+0>=16.1)}'; then
+            echo "::error::No Xcode >= 16.1 available (best: $bestv)"; exit 1
+          fi
+          echo "Using $best ($bestv)"
+          sudo xcode-select -s "$best"
           xcodebuild -version
 
       - name: Install JS dependencies
@@ -51,16 +68,14 @@ jobs:
           '
           npx expo prebuild -p ios --no-install
 
-          # Prebuilt Expo binaries are cut at 16.4 and would raise the floor.
           node -e '
             const fs = require("fs");
             const f = "ios/Podfile.properties.json";
             const j = JSON.parse(fs.readFileSync(f, "utf8"));
-            j["EXPO_USE_PRECOMPILED_MODULES"] = "false";
+            j["EXPO_USE_PRECOMPILED_MODULES"] = "${{ inputs.precompiled }}";
             fs.writeFileSync(f, JSON.stringify(j, null, 2));
           '
 
-          # All six targets (app + sharing extension, Debug + Release).
           perl -pi -e 's/IPHONEOS_DEPLOYMENT_TARGET = "?16\.4"?/IPHONEOS_DEPLOYMENT_TARGET = 16.1/g' \
             ios/Hydra.xcodeproj/project.pbxproj
 
@@ -69,6 +84,37 @@ jobs:
               ios/Hydra.xcodeproj/project.pbxproj
             echo "Bundle id rewritten to ${{ inputs.bundle_id }}"
           fi
+
+      # Expo SDK 58 declares a blanket iOS 16.4 floor in every podspec, and
+      # expo-modules-autolinking refuses to link any module above the app target.
+      # The only 16.4 API used in the tree is behind #available(iOS 16.4), so the
+      # floor is policy, not a hard requirement.
+      - name: Lower Expo pod floors to 16.1
+        run: |
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const walk = (d, out = []) => {
+              for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                const p = path.join(d, e.name);
+                if (e.isDirectory()) { if (e.name !== ".git") walk(p, out); }
+                else if (e.name.endsWith(".podspec")) out.push(p);
+              }
+              return out;
+            };
+            const fix = (m, p1) => p1 + "16.1";
+            const re1 = /(:ios\s*=>\s*[\x22\x27])16\.4/g;
+            const re2 = /(ios:\s*[\x22\x27])16\.4/g;
+            let changed = 0, seen = 0;
+            for (const f of walk("node_modules")) {
+              const s = fs.readFileSync(f, "utf8");
+              const n = s.replace(re1, fix).replace(re2, fix);
+              seen++;
+              if (n !== s) { fs.writeFileSync(f, n); changed++; }
+            }
+            console.log(`patched ${changed} of ${seen} podspecs`);
+          '
+          echo "podspecs still declaring 16.4:"
+          grep -rl "16\.4" --include=*.podspec node_modules | wc -l
 
       - name: Install pods
         working-directory: ios
