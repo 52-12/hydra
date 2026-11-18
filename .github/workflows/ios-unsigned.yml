@@ -1,0 +1,66 @@
+name: Build unsigned IPA
+
+# TrollStore installs unsigned IPAs, so this build deliberately disables all
+# code signing. No Apple account, team ID or certificate is involved.
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+jobs:
+  ipa:
+    name: Unsigned release IPA
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Select newest Xcode 16.x
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16*.app | sort -r | head -1)
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install JS dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install pods (modules build from source, keeps iOS 16.1 floor)
+        working-directory: ios
+        run: pod install
+
+      - name: Build app
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+        run: |
+          xcodebuild -workspace ios/Hydra.xcworkspace \
+            -scheme Hydra -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" EXPANDED_CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Verify deployment target survived
+        run: |
+          PLIST="build/Build/Products/Release-iphoneos/Hydra.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$PLIST"
+
+      - name: Package IPA
+        run: |
+          mkdir -p ipa/Payload
+          cp -R build/Build/Products/Release-iphoneos/Hydra.app ipa/Payload/
+          cd ipa && zip -qry Hydra-16.1.ipa Payload
+          ls -lh Hydra-16.1.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hydra-16.1-ipa
+          path: ipa/Hydra-16.1.ipa
+          if-no-files-found: error
+          retention-days: 30
