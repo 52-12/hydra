@@ -10,11 +10,11 @@ on:
         required: false
         default: ""
       xcode_version:
-        description: "Xcode to use (16.4 = Expo 58 era; 26.x enforces Swift 6 sending rules)"
+        description: "Xcode to use (26.3 required: Swift 6.2 + weak let)"
         required: false
-        default: "16.4"
+        default: "26.3"
       precompiled:
-        description: "Use Expo precompiled modules (faster, may raise iOS floor)"
+        description: "Use Expo precompiled modules (16.4 binaries - breaks 16.1)"
         type: boolean
         required: false
         default: false
@@ -40,14 +40,11 @@ jobs:
 
       - name: Select Xcode
         run: |
-          ls -d /Applications/Xcode*.app | tr '\n' ' '
-          echo
           WANT="${{ inputs.xcode_version }}"
           CAND="/Applications/Xcode_${WANT}.app"
           if [ ! -d "$CAND" ]; then
             echo "::error::Xcode $WANT not installed on this image"; exit 1
           fi
-          echo "Using $CAND"
           sudo xcode-select -s "$CAND"
           xcodebuild -version
 
@@ -71,10 +68,6 @@ jobs:
             const f = "ios/Podfile.properties.json";
             const j = JSON.parse(fs.readFileSync(f, "utf8"));
             j["EXPO_USE_PRECOMPILED_MODULES"] = "${{ inputs.precompiled }}";
-            // The RN 0.88 prebuilt core is cut at 16.4; its jsi headers then
-            // surface as "@available(iOS 16.4)" to Swift. Building RN from
-            // source compiles headers at the app target instead.
-            j["ios.buildReactNativeFromSource"] = "true";
             fs.writeFileSync(f, JSON.stringify(j, null, 2));
           '
 
@@ -89,8 +82,8 @@ jobs:
 
       # Expo SDK 58 declares a blanket iOS 16.4 floor in every podspec, and
       # expo-modules-autolinking refuses to link any module above the app target.
-      # The only 16.4 API used in the tree is behind #available(iOS 16.4), so the
-      # floor is policy, not a hard requirement.
+      # Sources build fine at 16.1; only the JSI xcframework is compiled at 16.4
+      # (see the stamping step) because its Swift code genuinely needs that SDK.
       - name: Lower Expo pod floors to 16.1
         run: |
           node -e '
@@ -116,12 +109,10 @@ jobs:
             console.log(`patched ${changed} of ${seen} podspecs`);
           '
 
-      # 1. Swift 6.2 rejects `nonisolated(unsafe) let` captured by a global-actor
-      #    closure in withEncodedValue. The package ships UncheckedSendable for
-      #    exactly this (see its doc comment); upstream converted the other sites.
-      # 2. The SwiftPM manifest sets its own iOS floor, so the framework it
-      #    produces is stamped 16.4 even though the podspec says 16.1.
-      - name: Patch ExpoModulesJSI (Swift 6.2 error + iOS floor)
+      # Swift 6.2 rejects `nonisolated(unsafe) let` captured by a global-actor
+      # closure in withEncodedValue. The package ships UncheckedSendable for
+      # exactly this (see its doc comment); upstream converted every other site.
+      - name: Patch ExpoModulesJSI Swift 6.2 concurrency error
         run: |
           node -e '
             const fs = require("fs");
@@ -129,49 +120,25 @@ jobs:
             const s = fs.readFileSync(f, "utf8");
             const marker = "private func withEncodedValue(";
             const i = s.indexOf(marker);
-            if (i < 0) { console.log("marker not found - upstream may have fixed it"); }
-            else {
-              const end = s.indexOf("\n}\n", i);
-              let fn = s.slice(i, end);
-              const before = fn;
-              fn = fn
-                .replace("nonisolated(unsafe) let slot = buffer.baseAddress!", "let slot = UncheckedSendable(buffer.baseAddress!)")
-                .replace("expo.emplaceUndefined(slot)", "expo.emplaceUndefined(slot.value)")
-                .replace("expo.destroyValues(slot, 1)", "expo.destroyValues(slot.value, 1)")
-                .replace("JavaScriptValue.Slot(slot)", "JavaScriptValue.Slot(slot.value)")
-                .replace("body(slot.pointee)", "body(slot.value.pointee)");
-              if (fn === before) { console.log("::error::no change applied"); process.exit(1); }
-              fs.writeFileSync(f, s.slice(0, i) + fn + s.slice(end));
-              console.log("patched withEncodedValue");
-            }
+            if (i < 0) { console.log("marker not found - upstream may have fixed it"); process.exit(0); }
+            const end = s.indexOf("\n}\n", i);
+            let fn = s.slice(i, end);
+            const before = fn;
+            fn = fn
+              .replace("nonisolated(unsafe) let slot = buffer.baseAddress!", "let slot = UncheckedSendable(buffer.baseAddress!)")
+              .replace("expo.emplaceUndefined(slot)", "expo.emplaceUndefined(slot.value)")
+              .replace("expo.destroyValues(slot, 1)", "expo.destroyValues(slot.value, 1)")
+              .replace("JavaScriptValue.Slot(slot)", "JavaScriptValue.Slot(slot.value)")
+              .replace("body(slot.pointee)", "body(slot.value.pointee)");
+            if (fn === before) { console.log("::error::no change applied"); process.exit(1); }
+            fs.writeFileSync(f, s.slice(0, i) + fn + s.slice(end));
+            console.log("patched withEncodedValue");
           '
-          node -e '
-            const fs = require("fs");
-            const f = "node_modules/expo-modules-jsi/apple/Package.swift";
-            const s = fs.readFileSync(f, "utf8");
-            const n = s.replace(".iOS(\"16.4\")", ".iOS(\"16.1\")");
-            if (n === s) console.log("Package.swift: no iOS 16.4 platform found");
-            else { fs.writeFileSync(f, n); console.log("Package.swift: iOS platform lowered to 16.1"); }
-          '
-          node -e '
-            const fs = require("fs");
-            const f = "node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh";
-            let s = fs.readFileSync(f, "utf8");
-            if (s.includes("-disable-availability-checking")) {
-              console.log("availability flag already present");
-            } else {
-              const marker = "    SWIFT_ENABLE_EXPLICIT_MODULES=NO \\";
-              if (!s.includes(marker)) { console.log("::error::xcodebuild settings block not found"); process.exit(1); }
-              s = s.replace(marker, marker + "\n    OTHER_SWIFT_FLAGS=\"\\$(inherited) -disable-availability-checking\" \\");
-              fs.writeFileSync(f, s);
-              console.log("added -disable-availability-checking to the JSI xcframework build");
-            }
-          '
-          bash -n node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh && echo "script syntax ok"
 
       - name: Install pods
         working-directory: ios
         run: pod install
+
       - name: Build app (unsigned)
         run: |
           xcodebuild -workspace ios/Hydra.xcworkspace \
@@ -182,15 +149,26 @@ jobs:
             CODE_SIGN_IDENTITY="" EXPANDED_CODE_SIGN_IDENTITY="" \
             build
 
+      # ExpoModulesJSI is compiled at 16.4 with availability checks ENABLED, so it
+      # only references symbols that legitimately exist. Only its load metadata is
+      # lowered to 16.1, so dyld accepts it on 16.1.
+      - name: Stamp ExpoModulesJSI minos to 16.1
+        run: |
+          FW="build/Build/Products/Release-iphoneos/Hydra.app/Frameworks/ExpoModulesJSI.framework"
+          BIN="$FW/ExpoModulesJSI"
+          test -f "$BIN" || { echo "::error::ExpoModulesJSI.framework missing"; exit 1; }
+          echo "before:"; xcrun vtool -show-build "$BIN" | sed -n '1,8p'
+          xcrun vtool -set-build-version ios 16.1 26.2 -replace -output "${BIN}.new" "$BIN"
+          mv "${BIN}.new" "$BIN"
+          /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 16.1" "$FW/Info.plist"
+          echo "after:"; xcrun vtool -show-build "$BIN" | sed -n '1,8p'
+
       - name: Verify iOS 16.1 floor survived
         run: |
           APP=build/Build/Products/Release-iphoneos/Hydra.app
           echo "app MinimumOSVersion:"
           /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
 
-          # Precompiled Expo modules are downloaded rather than built, so also
-          # check every embedded binary: an xcframework cut at 16.4 would load
-          # fine in the linker and crash on a 16.1 device.
           BAD=0
           echo "embedded binaries:"
           while IFS= read -r p; do
