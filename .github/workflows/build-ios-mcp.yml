@@ -1,0 +1,86 @@
+name: Build ios-mcp patched tweak
+
+# Builds ios-mcp's SpringBoard tweak on macOS so the arm64e slice carries
+# pointer-auth ABI v2 (Theos' bundled clang 13 on Linux only emits ABI v1,
+# which SpringBoard silently refuses to load).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          sudo mkdir -p /opt/theos
+          curl -fsSL -o /tmp/sdks.tar.gz https://github.com/theos/sdks/archive/master.tar.gz
+          sudo tar -xzf /tmp/sdks.tar.gz -C "$THEOS/sdks" --strip-components=1
+          ls "$THEOS/sdks"
+
+      - name: Install dpkg (for deb packaging)
+        run: brew install dpkg || true
+
+      - name: Fetch upstream fork and apply patch
+        run: |
+          git clone --depth 1 https://github.com/noxreddit/ios-mcp-build.git src
+          python3 ci/ios-mcp/patch_appmanager.py src/AppManager.m
+          cp ci/ios-mcp/Makefile.patch src/Makefile.patch
+          mkdir -p src/stub
+          cp ci/ios-mcp/roothide.h src/stub/roothide.h
+
+      - name: Build tweak
+        working-directory: src
+        run: |
+          export PATH="$THEOS/bin:$PATH"
+          make -f Makefile.patch THEOS_PACKAGE_SCHEME=rootless ARCHS=arm64e \
+            FINALPACKAGE=1 STRIP=1 ADDITIONAL_CFLAGS="-Istub"
+          file .theos/obj/ios-mcp.dylib || true
+
+      - name: Verify arm64e ABI v2
+        working-directory: src
+        run: |
+          python3 - <<'PY'
+          import struct
+          d = open(".theos/obj/ios-mcp.dylib", "rb").read(4096)
+          cpu, sub = struct.unpack("<ii", d[4:12])
+          print("cpusubtype:", sub)
+          assert sub == -2147483646, "NOT arm64e ABI v2 - SpringBoard will reject this"
+          PY
+
+      - name: Package deb
+        run: |
+          rm -rf pkg && mkdir -p pkg/var/jb/Library/MobileSubstrate/DynamicLibraries pkg/DEBIAN
+          cp src/.theos/obj/ios-mcp.dylib pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/ios-mcp.dylib
+          chmod 755 pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/ios-mcp.dylib
+          cat > pkg/DEBIAN/control <<'CTL'
+          Package: com.witchan.ios-mcp
+          Name: iOS MCP
+          Version: 1.2.8-patch3
+          Architecture: iphoneos-arm64
+          Maintainer: witchan
+          Author: witchan
+          Section: Tweaks
+          Depends: mobilesubstrate, preferenceloader
+          Description: MCP server (arm64e ABI v2 rebuild: TrollStore-style install first).
+          CTL
+          cat > pkg/DEBIAN/preinst <<'PRE'
+          #!/bin/sh
+          D=/var/jb/Library/MobileSubstrate/DynamicLibraries/ios-mcp.dylib
+          [ -f "$D" ] && cp -f "$D" /var/mobile/Documents/ios-mcp.dylib.prev || true
+          exit 0
+          PRE
+          chmod 755 pkg/DEBIAN/preinst
+          dpkg-deb -b pkg ios-mcp-patch3.deb
+          ls -l ios-mcp-patch3.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-mcp-patch3
+          path: ios-mcp-patch3.deb
+          if-no-files-found: error
