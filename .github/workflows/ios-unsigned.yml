@@ -112,10 +112,12 @@ jobs:
             console.log(`patched ${changed} of ${seen} podspecs`);
           '
 
-      # Swift 6.2 rejects `nonisolated(unsafe) let` captured by a global-actor
-      # closure in withEncodedValue. The package ships UncheckedSendable for
-      # exactly this (see its doc comment); upstream converted every other site.
-      - name: Patch ExpoModulesJSI Swift 6.2 concurrency error
+      # 1. Swift 6.2 rejects `nonisolated(unsafe) let` captured by a global-actor
+      #    closure in withEncodedValue. The package ships UncheckedSendable for
+      #    exactly this (see its doc comment); upstream converted the other sites.
+      # 2. The SwiftPM manifest sets its own iOS floor, so the framework it
+      #    produces is stamped 16.4 even though the podspec says 16.1.
+      - name: Patch ExpoModulesJSI (Swift 6.2 error + iOS floor)
         run: |
           node -e '
             const fs = require("fs");
@@ -123,19 +125,29 @@ jobs:
             const s = fs.readFileSync(f, "utf8");
             const marker = "private func withEncodedValue(";
             const i = s.indexOf(marker);
-            if (i < 0) { console.log("marker not found - upstream may have fixed it"); process.exit(0); }
-            const end = s.indexOf("\n}\n", i);
-            let fn = s.slice(i, end);
-            const before = fn;
-            fn = fn
-              .replace("nonisolated(unsafe) let slot = buffer.baseAddress!", "let slot = UncheckedSendable(buffer.baseAddress!)")
-              .replace("expo.emplaceUndefined(slot)", "expo.emplaceUndefined(slot.value)")
-              .replace("expo.destroyValues(slot, 1)", "expo.destroyValues(slot.value, 1)")
-              .replace("JavaScriptValue.Slot(slot)", "JavaScriptValue.Slot(slot.value)")
-              .replace("body(slot.pointee)", "body(slot.value.pointee)");
-            if (fn === before) { console.log("::error::no change applied"); process.exit(1); }
-            fs.writeFileSync(f, s.slice(0, i) + fn + s.slice(end));
-            console.log("patched withEncodedValue");
+            if (i < 0) { console.log("marker not found - upstream may have fixed it"); }
+            else {
+              const end = s.indexOf("\n}\n", i);
+              let fn = s.slice(i, end);
+              const before = fn;
+              fn = fn
+                .replace("nonisolated(unsafe) let slot = buffer.baseAddress!", "let slot = UncheckedSendable(buffer.baseAddress!)")
+                .replace("expo.emplaceUndefined(slot)", "expo.emplaceUndefined(slot.value)")
+                .replace("expo.destroyValues(slot, 1)", "expo.destroyValues(slot.value, 1)")
+                .replace("JavaScriptValue.Slot(slot)", "JavaScriptValue.Slot(slot.value)")
+                .replace("body(slot.pointee)", "body(slot.value.pointee)");
+              if (fn === before) { console.log("::error::no change applied"); process.exit(1); }
+              fs.writeFileSync(f, s.slice(0, i) + fn + s.slice(end));
+              console.log("patched withEncodedValue");
+            }
+          '
+          node -e '
+            const fs = require("fs");
+            const f = "node_modules/expo-modules-jsi/apple/Package.swift";
+            const s = fs.readFileSync(f, "utf8");
+            const n = s.replace(".iOS(\"16.4\")", ".iOS(\"16.1\")");
+            if (n === s) console.log("Package.swift: no iOS 16.4 platform found");
+            else { fs.writeFileSync(f, n); console.log("Package.swift: iOS platform lowered to 16.1"); }
           '
 
       - name: Install pods
