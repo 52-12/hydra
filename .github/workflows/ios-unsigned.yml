@@ -71,9 +71,9 @@ jobs:
             const f = "ios/Podfile.properties.json";
             const j = JSON.parse(fs.readFileSync(f, "utf8"));
             j["EXPO_USE_PRECOMPILED_MODULES"] = "${{ inputs.precompiled }}";
-            // RN 0.88's prebuilt core is cut at 16.4; its jsi headers then surface
-            // as "@available(iOS 16.4)" to Swift. Building RN from source compiles
-            // headers at the app's 16.1 target instead.
+            // The RN 0.88 prebuilt core is cut at 16.4; its jsi headers then
+            // surface as "@available(iOS 16.4)" to Swift. Building RN from
+            // source compiles headers at the app target instead.
             j["ios.buildReactNativeFromSource"] = "true";
             fs.writeFileSync(f, JSON.stringify(j, null, 2));
           '
