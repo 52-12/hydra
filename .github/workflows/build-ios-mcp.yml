@@ -26,6 +26,9 @@ jobs:
       - name: Install dpkg (for deb packaging)
         run: brew install dpkg || true
 
+      - name: Install ldid (tweak signing)
+        run: brew install ldid || brew install ProcursusTeam/ldid/ldid
+
       - name: Fetch upstream fork and apply patch
         run: |
           git clone --depth 1 https://github.com/noxreddit/ios-mcp-build.git src
