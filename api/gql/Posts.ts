@@ -520,12 +520,22 @@ export async function getPosts(
   } else {
     ids = await getFeedPostIds(query, options.after);
     if (!ids.length && query.operation === AllFeedSdui) {
-      // Reddit currently answers the All feed operation with no cells, which
-      // leaves the tab empty. Popular is the closest feed that still responds.
+      // Reddit's dedicated All operation currently returns no cells, which
+      // leaves the tab empty. Try the generic subreddit feed for "all" first,
+      // then the Popular feed as a last resort.
       ids = await getFeedPostIds(
-        { operation: PopularFeedSdui, variables: query.variables },
+        {
+          operation: SubredditFeedSdui,
+          variables: { ...query.variables, subredditName: "all" },
+        },
         options.after,
       );
+      if (!ids.length) {
+        ids = await getFeedPostIds(
+          { operation: PopularFeedSdui, variables: query.variables },
+          options.after,
+        );
+      }
     }
   }
   return await getPostsByIds(ids);
