@@ -519,6 +519,14 @@ export async function getPosts(
         : firstPageIds;
   } else {
     ids = await getFeedPostIds(query, options.after);
+    if (!ids.length && query.operation === AllFeedSdui) {
+      // Reddit currently answers the All feed operation with no cells, which
+      // leaves the tab empty. Popular is the closest feed that still responds.
+      ids = await getFeedPostIds(
+        { operation: PopularFeedSdui, variables: query.variables },
+        options.after,
+      );
+    }
   }
   return await getPostsByIds(ids);
 }
