@@ -153,6 +153,21 @@ jobs:
             if (n === s) console.log("Package.swift: no iOS 16.4 platform found");
             else { fs.writeFileSync(f, n); console.log("Package.swift: iOS platform lowered to 16.1"); }
           '
+          node -e '
+            const fs = require("fs");
+            const f = "node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh";
+            let s = fs.readFileSync(f, "utf8");
+            if (s.includes("-disable-availability-checking")) {
+              console.log("availability flag already present");
+            } else {
+              const marker = "SWIFT_ENABLE_EXPLICIT_MODULES=NO \\";
+              const add = "    OTHER_SWIFT_FLAGS=\"\\$(inherited) -disable-availability-checking\" \\\n";
+              if (!s.includes(marker)) { console.log("::error::xcodebuild settings block not found"); process.exit(1); }
+              s = s.replace(marker, marker + "\n" + add);
+              fs.writeFileSync(f, s);
+              console.log("added -disable-availability-checking to the JSI xcframework build");
+            }
+          '
 
       - name: Install pods
         working-directory: ios
