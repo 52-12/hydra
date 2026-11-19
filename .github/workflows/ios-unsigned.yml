@@ -160,14 +160,14 @@ jobs:
             if (s.includes("-disable-availability-checking")) {
               console.log("availability flag already present");
             } else {
-              const marker = "SWIFT_ENABLE_EXPLICIT_MODULES=NO \\";
-              const add = "    OTHER_SWIFT_FLAGS=\"\\$(inherited) -disable-availability-checking\" \\\n";
+              const marker = "    SWIFT_ENABLE_EXPLICIT_MODULES=NO \\";
               if (!s.includes(marker)) { console.log("::error::xcodebuild settings block not found"); process.exit(1); }
-              s = s.replace(marker, marker + "\n" + add);
+              s = s.replace(marker, marker + "\n    OTHER_SWIFT_FLAGS=\"\\$(inherited) -disable-availability-checking\" \\");
               fs.writeFileSync(f, s);
               console.log("added -disable-availability-checking to the JSI xcframework build");
             }
           '
+          bash -n node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh && echo "script syntax ok"
 
       - name: Install pods
         working-directory: ios
