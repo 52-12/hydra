@@ -1,0 +1,85 @@
+name: Build ios-mcp full (patched)
+
+# Full rebuild of ios-mcp using upstream's own Makefile (prefs bundle, helpers,
+# resources) so the tweak matches the official package layout, plus the
+# TrollStore-style install patch. The PaddleOCR worker needs a from-source
+# ONNX/OpenCV build, so it is stubbed; OCR is the only feature affected.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          curl -fsSL -o /tmp/sdks.tar.gz https://github.com/theos/sdks/archive/master.tar.gz
+          tar -xzf /tmp/sdks.tar.gz -C "$THEOS/sdks" --strip-components=1
+          ls "$THEOS/sdks"
+
+      - name: Install tools
+        run: |
+          brew install dpkg ldid || true
+
+      - name: Fetch upstream and patch
+        run: |
+          git clone --depth 1 https://github.com/noxreddit/ios-mcp-build.git src
+          python3 ci/ios-mcp/patch_appmanager.py src/AppManager.m
+          grep -n -A2 "PATCH: TrollStore-style" src/AppManager.m
+
+      - name: Build helper subprojects
+        working-directory: src
+        run: |
+          export PATH="$THEOS/bin:$PATH"
+          for d in AppSync AppSync/appinst mcp-roothelper mcp-ldid mcp-root mcp-logreader; do
+            echo "== $d"
+            ( cd "$d" && make THEOS_PACKAGE_SCHEME=rootless -j4 ) || { echo "failed: $d"; exit 1; }
+          done
+
+      - name: Stub OCR worker and models
+        working-directory: src
+        run: |
+          mkdir -p mcp-ocr-worker/.theos/obj
+          cp mcp-ldid/.theos/obj/mcp-ldid mcp-ocr-worker/.theos/obj/mcp-ocr-worker
+          chmod +x mcp-ocr-worker/.theos/obj/mcp-ocr-worker
+          mkdir -p third_party/paddleocr/models
+          if [ -z "$(ls -A third_party/paddleocr/models 2>/dev/null)" ]; then
+            echo placeholder > third_party/paddleocr/models/PLACEHOLDER.txt
+          fi
+
+      - name: Build package
+        working-directory: src
+        run: |
+          export PATH="$THEOS/bin:$PATH"
+          make THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 STRIP=1 -j4 package 2>&1 | tail -30
+          ls -l packages/
+
+      - name: Verify arm64e ABI v2 inside deb
+        working-directory: src
+        run: |
+          DEB=$(ls packages/*.deb | head -1)
+          echo "deb: $DEB"
+          rm -rf /tmp/x && mkdir -p /tmp/x
+          dpkg-deb -x "$DEB" /tmp/x
+          D=$(find /tmp/x -name ios-mcp.dylib | head -1)
+          echo "dylib: $D"
+          python3 - "$D" <<'PY'
+          import struct, sys
+          d = open(sys.argv[1], "rb").read(4096)
+          cpu, sub = struct.unpack("<ii", d[4:12])
+          print("cpusubtype:", sub)
+          assert sub == -2147483646, "not arm64e ABI v2"
+          PY
+          cp "$DEB" "$GITHUB_WORKSPACE/ios-mcp-full.deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-mcp-full
+          path: ios-mcp-full.deb
+          if-no-files-found: error
